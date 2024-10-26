@@ -119,7 +119,7 @@ elif selection == "Upload":
 
     st.write("""
     **Guidelines for Submission**:
-    - **Food Name Format**: Use clear and traditional names, such as "Iyan" instead of "Pounded Yam", "Efo Riro" instead of "Vegetable Soup."
+    - **Food Name Format**: Use clear and traditional names, such as eforiro, ekuru..."
     - **Image Quality**: The image should be of good quality, with clear visibility of the dish.
     - **Original Images Only**: Please upload only original photos you took yourself. Images from the internet are not allowed.
     """)

@@ -16,15 +16,23 @@ drive_service = build('drive', 'v3', credentials=creds)
 # Folder ID where images and CSV will be saved in Google Drive
 FOLDER_ID = '1Ye3_tBZaC-W-i05LDl9OEl1ujJTB77Wq'  # Replace with your actual folder ID
 
-# Function to upload files to Google Drive
-def upload_to_drive(file_stream, file_name, mime_type):
-    file_metadata = {
-        'name': file_name,
-        'parents': [FOLDER_ID]
-    }
+# Function to get the file ID of food_data.csv if it exists
+def get_file_id(file_name):
+    query = f"name='{file_name}' and '{FOLDER_ID}' in parents and mimeType='text/csv'"
+    response = drive_service.files().list(q=query, fields="files(id, name)").execute()
+    files = response.get('files', [])
+    return files[0]['id'] if files else None
+
+# Function to upload files to Google Drive (creates a new file or updates an existing file if ID is provided)
+def upload_to_drive(file_stream, file_name, mime_type, file_id=None):
     media = MediaIoBaseUpload(file_stream, mimetype=mime_type)
-    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    return file.get('id')
+    if file_id:
+        # Update existing file
+        drive_service.files().update(fileId=file_id, media_body=media).execute()
+    else:
+        # Create new file
+        file_metadata = {'name': file_name, 'parents': [FOLDER_ID]}
+        drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
 
 # Function to save image and data to Google Drive
 def save_image_to_drive(image, food_name, description, country, state, tribe):
@@ -34,29 +42,33 @@ def save_image_to_drive(image, food_name, description, country, state, tribe):
     image_stream.seek(0)
     
     # Upload image to Google Drive
-    image_id = upload_to_drive(image_stream, f"{food_name}.jpg", 'image/jpeg')
+    upload_to_drive(image_stream, f"{food_name}.jpg", 'image/jpeg')
     
     # Prepare data to append to CSV
     data = {
         "Food Name": [food_name], "Description": [description], 
-        "Image ID": [image_id], "Country": [country], 
-        "State": [state], "Tribe": [tribe]
+        "Country": [country], "State": [state], "Tribe": [tribe]
     }
     df = pd.DataFrame(data)
 
-    # Load existing data if CSV already exists
-    csv_path = 'food_data.csv'
+    # Define CSV path
+    csv_path = 'africa-dishes_data.csv'
+
+    # Check if CSV exists locally and append if it does, otherwise create it
     if os.path.exists(csv_path):
-        existing_df = pd.read_csv(csv_path)
-        df = pd.concat([existing_df, df], ignore_index=True)
+        df.to_csv(csv_path, mode='a', header=False, index=False)  # Append without header
+    else:
+        df.to_csv(csv_path, mode='w', header=True, index=False)   # Write with header
 
-    # Save updated CSV locally
-    df.to_csv(csv_path, index=False)
-
-    # Upload updated CSV to Google Drive
+    # Read the updated CSV as a byte stream for upload
     with open(csv_path, 'rb') as f:
         file_stream = io.BytesIO(f.read())
-        upload_to_drive(file_stream, 'food_data.csv', 'text/csv')
+    
+    # Check if the CSV file already exists on Google Drive
+    csv_file_id = get_file_id('africa-dishes_data.csv')
+    
+    # Upload or update the CSV file on Google Drive
+    upload_to_drive(file_stream, 'africa-dishes_data.csv', 'text/csv', file_id=csv_file_id)
 
 # Streamlit interface (same as before, no changes)
 st.sidebar.title("Navigation")
@@ -124,4 +136,3 @@ elif selection == "Upload":
             st.success("Data saved successfully to Google Drive!")
         else:
             st.warning("Please upload an image and fill in the Food Name, Country, State, and Tribe fields.")
-

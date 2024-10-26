@@ -1,11 +1,10 @@
 import streamlit as st
 from PIL import Image
 import pandas as pd
-import os
 import io
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Authenticate and initialize the Google Drive API using Streamlit Secrets
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -16,14 +15,31 @@ drive_service = build('drive', 'v3', credentials=creds)
 # Folder ID where images and CSV will be saved in Google Drive
 FOLDER_ID = '1Ye3_tBZaC-W-i05LDl9OEl1ujJTB77Wq'  # Replace with your actual folder ID
 
-# Function to get the file ID of food_data.csv if it exists
+# Function to get the file ID of africa-dishes_data.csv if it exists
 def get_file_id(file_name):
     query = f"name='{file_name}' and '{FOLDER_ID}' in parents and mimeType='text/csv'"
     response = drive_service.files().list(q=query, fields="files(id, name)").execute()
     files = response.get('files', [])
     return files[0]['id'] if files else None
 
-# Function to upload files to Google Drive (creates a new file or updates an existing file if ID is provided)
+# Function to download the existing CSV from Google Drive, or create a new DataFrame if it doesn’t exist
+def download_csv(file_id):
+    if file_id:
+        # Download the CSV from Google Drive
+        request = drive_service.files().get_media(fileId=file_id)
+        file_stream = io.BytesIO()
+        downloader = MediaIoBaseDownload(file_stream, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        file_stream.seek(0)
+        # Read the CSV into a DataFrame
+        return pd.read_csv(file_stream)
+    else:
+        # If no file exists, return an empty DataFrame with the expected columns
+        return pd.DataFrame(columns=["Food Name", "Description", "Country", "State", "Tribe"])
+
+# Function to upload or update files on Google Drive
 def upload_to_drive(file_stream, file_name, mime_type, file_id=None):
     media = MediaIoBaseUpload(file_stream, mimetype=mime_type)
     if file_id:
@@ -36,37 +52,32 @@ def upload_to_drive(file_stream, file_name, mime_type, file_id=None):
 
 # Function to save image and data to Google Drive
 def save_image_to_drive(image, food_name, description, country, state, tribe):
-    # Convert image to byte stream
+    # Convert image to byte stream and upload to Google Drive
     image_stream = io.BytesIO()
     image.save(image_stream, format='JPEG')
     image_stream.seek(0)
-    
-    # Upload image to Google Drive
     upload_to_drive(image_stream, f"{food_name}.jpg", 'image/jpeg')
-    
+
     # Prepare data to append to CSV
-    data = {
-        "Food Name": [food_name], "Description": [description], 
+    new_data = pd.DataFrame({
+        "Food Name": [food_name], "Description": [description],
         "Country": [country], "State": [state], "Tribe": [tribe]
-    }
-    df = pd.DataFrame(data)
+    })
 
-    # Define CSV path
-    csv_path = 'africa-dishes_data.csv'
-
-    # Check if CSV exists locally and append if it does, otherwise create it
-    if os.path.exists(csv_path):
-        df.to_csv(csv_path, mode='a', header=False, index=False)  # Append without header
-    else:
-        df.to_csv(csv_path, mode='w', header=True, index=False)   # Write with header
-
-    # Read the updated CSV as a byte stream for upload
-    with open(csv_path, 'rb') as f:
-        file_stream = io.BytesIO(f.read())
-    
-    # Check if the CSV file already exists on Google Drive
+    # Get the file ID of africa-dishes_data.csv on Google Drive
     csv_file_id = get_file_id('africa-dishes_data.csv')
-    
+
+    # Download existing CSV data or start with an empty DataFrame if it doesn't exist
+    existing_data = download_csv(csv_file_id)
+
+    # Append the new data to the existing DataFrame
+    updated_data = pd.concat([existing_data, new_data], ignore_index=True)
+
+    # Convert the updated DataFrame to a byte stream for upload
+    file_stream = io.BytesIO()
+    updated_data.to_csv(file_stream, index=False)
+    file_stream.seek(0)
+
     # Upload or update the CSV file on Google Drive
     upload_to_drive(file_stream, 'africa-dishes_data.csv', 'text/csv', file_id=csv_file_id)
 
@@ -136,3 +147,4 @@ elif selection == "Upload":
             st.success("Data saved successfully to Google Drive!")
         else:
             st.warning("Please upload an image and fill in the Food Name, Country, State, and Tribe fields.")
+

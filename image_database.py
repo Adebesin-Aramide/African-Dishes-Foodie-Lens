@@ -86,7 +86,7 @@ elif selection == "Upload":
     # Example image and guidance for users
     st.subheader("Example of Submission")
     example_image_path = "DALAS-SEMO-EFO.jpg"  # Replace with the path to your example image
-    st.image(example_image_path, caption="Example: Semo, Efo Riro, Ponmo, Saki", use_column_width=True)
+    st.image(example_image_path, caption="Example: Semo, Efo Riro, Ponmo, Saki", use_container_width=True)
 
     st.write("""
     **Guidelines for Submission**:
